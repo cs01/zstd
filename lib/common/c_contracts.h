@@ -211,14 +211,18 @@
 #if !C_CONTRACTS
 #define pre(P) c_pre(P)
 #define post(P) c_post(P)
-#define assigns(L) c_assigns(L)
+#ifdef C_CONTRACTS_CPROVER
+#define assigns(L) __CPROVER_assigns(L)
+#else
+#define assigns(L)
+#endif
 #define loop_invariant(P) c_invariant(P)
 #define decreases(M) c_decreases(M)
 #define old(E) c_old(E)
 #endif
 
 /* The rest are macros under every target, so they alias unconditionally. */
-#define locations(A, B) c_locations(A, B)
+#define locations(A, B) A, B
 #define returns(P) c_returns(P)
 #define reads(P, N) c_reads(P, N)
 #define writes(P, N) c_writes(P, N)
