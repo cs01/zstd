@@ -852,13 +852,13 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
         {   BYTE* const opStart c_ghost = op;
             const BYTE* const ipStart c_ghost = ip;
             while (op < oend)
-            c_assigns   (c_locations(op, c_locations(ip, c_range(opStart, 0, length))))
-            c_invariant (c_same_object(op, opStart))
-            c_invariant (c_same_object(ip, ipStart))
-            c_invariant (c_pointer_offset(op) >= c_pointer_offset(opStart))
-            c_invariant (c_pointer_offset(op) <= c_pointer_offset(opStart) + (c_ssize_t)length)
-            c_invariant (c_pointer_offset(ip) - c_pointer_offset(ipStart) == c_pointer_offset(op) - c_pointer_offset(opStart))
-            c_decreases (c_pointer_offset(opStart) + (c_ssize_t)length - c_pointer_offset(op))
+            assigns   (locations(op, locations(ip, range(opStart, 0, length))))
+            loop_invariant (same_object(op, opStart))
+            loop_invariant (same_object(ip, ipStart))
+            loop_invariant (pointer_offset(op) >= pointer_offset(opStart))
+            loop_invariant (pointer_offset(op) <= pointer_offset(opStart) + (c_ssize_t)length)
+            loop_invariant (pointer_offset(ip) - pointer_offset(ipStart) == pointer_offset(op) - pointer_offset(opStart))
+            decreases (pointer_offset(opStart) + (c_ssize_t)length - pointer_offset(op))
             { *op++ = *ip++; }
         }
         return;
@@ -890,13 +890,13 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
         const BYTE* const ipTail c_ghost = ip;
         size_t const tail c_ghost = (size_t)(oend - op);
         while (op < oend)
-        c_assigns   (c_locations(op, c_locations(ip, c_range(opTail, 0, tail))))
-        c_invariant (c_same_object(op, opTail))
-        c_invariant (c_same_object(ip, ipTail))
-        c_invariant (c_pointer_offset(op) >= c_pointer_offset(opTail))
-        c_invariant (c_pointer_offset(op) <= c_pointer_offset(opTail) + (c_ssize_t)tail)
-        c_invariant (c_pointer_offset(ip) - c_pointer_offset(ipTail) == c_pointer_offset(op) - c_pointer_offset(opTail))
-        c_decreases (c_pointer_offset(opTail) + (c_ssize_t)tail - c_pointer_offset(op))
+        assigns   (locations(op, locations(ip, range(opTail, 0, tail))))
+        loop_invariant (same_object(op, opTail))
+        loop_invariant (same_object(ip, ipTail))
+        loop_invariant (pointer_offset(op) >= pointer_offset(opTail))
+        loop_invariant (pointer_offset(op) <= pointer_offset(opTail) + (c_ssize_t)tail)
+        loop_invariant (pointer_offset(ip) - pointer_offset(ipTail) == pointer_offset(op) - pointer_offset(opTail))
+        decreases (pointer_offset(opTail) + (c_ssize_t)tail - pointer_offset(op))
         { *op++ = *ip++; }
     }
 }
@@ -1036,13 +1036,13 @@ size_t ZSTD_execSequence(BYTE* op,
     /* These obligations exist today only in asserts that -DNDEBUG deletes, and
        in allocation arithmetic two call frames away in ZSTD_decodeLiteralsBlock.
        Stated here they survive the release build and reach a checker. */
-    c_pre (op != NULL)
-    c_pre (oend - op >= WILDCOPY_OVERLENGTH)
-    c_pre (sequence.matchLength >= 1)
-    c_pre (sequence.offset >= 1)
-    c_pre (sequence.offset <= (size_t)(op - prefixStart) + sequence.litLength)
-    c_pre (*litPtr + sequence.litLength <= litLimit)
-    c_pre (sequence.litLength + sequence.matchLength <= (size_t)(oend - op))
+    pre (op != NULL)
+    pre (oend - op >= WILDCOPY_OVERLENGTH)
+    pre (sequence.matchLength >= 1)
+    pre (sequence.offset >= 1)
+    pre (sequence.offset <= (size_t)(op - prefixStart) + sequence.litLength)
+    pre (*litPtr + sequence.litLength <= litLimit)
+    pre (sequence.litLength + sequence.matchLength <= (size_t)(oend - op))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;
