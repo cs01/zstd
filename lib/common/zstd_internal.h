@@ -20,6 +20,7 @@
 *  Dependencies
 ***************************************/
 #include "compiler.h"
+#include "c_contracts.h"
 #include "cpu.h"
 #include "mem.h"
 #include "debug.h"                 /* assert, DEBUGLOG, RAWLOG, g_debuglevel */
@@ -216,6 +217,12 @@ typedef enum {
  */
 MEM_STATIC FORCE_INLINE_ATTR
 void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e const ovtype)
+    /* Wildcopy deliberately writes up to WILDCOPY_OVERLENGTH bytes past length.
+       Every caller must therefore own that much slack, which is stated nowhere
+       in the signature and is the source of the overwrite bugs this guards. */
+    c_pre     (c_readable(src, length + WILDCOPY_OVERLENGTH))
+    c_pre     (c_writable(dst, length + WILDCOPY_OVERLENGTH))
+    c_assigns (c_range((BYTE*)dst, 0, length + WILDCOPY_OVERLENGTH))
 {
     ptrdiff_t diff = (BYTE*)dst - (const BYTE*)src;
     const BYTE* ip = (const BYTE*)src;

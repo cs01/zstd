@@ -24,6 +24,7 @@
 #include "../common/zstd_internal.h"
 #include "zstd_decompress_internal.h"   /* ZSTD_DCtx */
 #include "zstd_decompress_block.h"
+#include "../common/c_contracts.h"
 #include "../common/bits.h"  /* ZSTD_highbit32 */
 
 /*_*******************************************************
@@ -848,7 +849,18 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
 
     if (length < 8) {
         /* Handle short lengths. */
-        while (op < oend) *op++ = *ip++;
+        {   BYTE* const opStart c_ghost = op;
+            const BYTE* const ipStart c_ghost = ip;
+            while (op < oend)
+            c_assigns   (c_locations(op, c_locations(ip, c_range(opStart, 0, length))))
+            c_invariant (c_same_object(op, opStart))
+            c_invariant (c_same_object(ip, ipStart))
+            c_invariant (c_pointer_offset(op) >= c_pointer_offset(opStart))
+            c_invariant (c_pointer_offset(op) <= c_pointer_offset(opStart) + (c_ssize_t)length)
+            c_invariant (c_pointer_offset(ip) - c_pointer_offset(ipStart) == c_pointer_offset(op) - c_pointer_offset(opStart))
+            c_decreases (c_pointer_offset(opStart) + (c_ssize_t)length - c_pointer_offset(op))
+            { *op++ = *ip++; }
+        }
         return;
     }
     if (ovtype == ZSTD_overlap_src_before_dst) {
@@ -874,7 +886,19 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
         op += oend_w - op;
     }
     /* Handle the leftovers. */
-    while (op < oend) *op++ = *ip++;
+    {   BYTE* const opTail c_ghost = op;
+        const BYTE* const ipTail c_ghost = ip;
+        size_t const tail c_ghost = (size_t)(oend - op);
+        while (op < oend)
+        c_assigns   (c_locations(op, c_locations(ip, c_range(opTail, 0, tail))))
+        c_invariant (c_same_object(op, opTail))
+        c_invariant (c_same_object(ip, ipTail))
+        c_invariant (c_pointer_offset(op) >= c_pointer_offset(opTail))
+        c_invariant (c_pointer_offset(op) <= c_pointer_offset(opTail) + (c_ssize_t)tail)
+        c_invariant (c_pointer_offset(ip) - c_pointer_offset(ipTail) == c_pointer_offset(op) - c_pointer_offset(opTail))
+        c_decreases (c_pointer_offset(opTail) + (c_ssize_t)tail - c_pointer_offset(op))
+        { *op++ = *ip++; }
+    }
 }
 
 /* ZSTD_safecopyDstBeforeSrc():
@@ -1009,6 +1033,16 @@ size_t ZSTD_execSequence(BYTE* op,
     BYTE* const oend, seq_t sequence,
     const BYTE** litPtr, const BYTE* const litLimit,
     const BYTE* const prefixStart, const BYTE* const virtualStart, const BYTE* const dictEnd)
+    /* These obligations exist today only in asserts that -DNDEBUG deletes, and
+       in allocation arithmetic two call frames away in ZSTD_decodeLiteralsBlock.
+       Stated here they survive the release build and reach a checker. */
+    c_pre (op != NULL)
+    c_pre (oend - op >= WILDCOPY_OVERLENGTH)
+    c_pre (sequence.matchLength >= 1)
+    c_pre (sequence.offset >= 1)
+    c_pre (sequence.offset <= (size_t)(op - prefixStart) + sequence.litLength)
+    c_pre (*litPtr + sequence.litLength <= litLimit)
+    c_pre (sequence.litLength + sequence.matchLength <= (size_t)(oend - op))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;
