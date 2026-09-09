@@ -1033,16 +1033,31 @@ size_t ZSTD_execSequence(BYTE* op,
     BYTE* const oend, seq_t sequence,
     const BYTE** litPtr, const BYTE* const litLimit,
     const BYTE* const prefixStart, const BYTE* const virtualStart, const BYTE* const dictEnd)
-    /* These obligations exist today only in asserts that -DNDEBUG deletes, and
-       in allocation arithmetic two call frames away in ZSTD_decodeLiteralsBlock.
-       Stated here they survive the release build and reach a checker. */
+    /* What a caller must guarantee, and only that. Writing these down forced a
+       distinction the asserts in the body blur: three of the conditions the
+       first draft listed here -- the literals fitting, the sequence fitting in
+       the output buffer, and the offset lying inside the window -- are not
+       preconditions at all. This function validates them and routes the failing
+       cases to ZSTD_execSequenceEnd, which returns an error. Asserting them at
+       entry claims the caller owes them, and a caller that honours the claim is
+       doing redundant work; a checker that believes it rejects legal streams.
+       Confirmed empirically: `oend - op >= WILDCOPY_OVERLENGTH` fired three
+       times on an ordinary 297 KB decompression whose output was correct.
+
+       What remains is genuine, and today lives only in asserts that -DNDEBUG
+       deletes. */
     pre (op != NULL)
-    pre (oend - op >= WILDCOPY_OVERLENGTH)
+    pre (op <= oend)
+    pre (prefixStart <= op)
+    pre (*litPtr <= litLimit)
     pre (sequence.matchLength >= 1)
     pre (sequence.offset >= 1)
-    pre (sequence.offset <= (size_t)(op - prefixStart) + sequence.litLength)
-    pre (*litPtr + sequence.litLength <= litLimit)
-    pre (sequence.litLength + sequence.matchLength <= (size_t)(oend - op))
+    /* Not runtime-checkable, and the one that is easiest to miss: ZSTD_copy16
+       always reads 16 bytes and ZSTD_wildcopy over-reads up to
+       WILDCOPY_OVERLENGTH, so the literals buffer needs that much readable slack
+       past litLimit. Established by allocation arithmetic in
+       ZSTD_decodeLiteralsBlock, consumed here, stated in neither signature. */
+    pre (readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;
