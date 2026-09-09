@@ -25,6 +25,12 @@
 #include "zstd_decompress_internal.h"   /* ZSTD_DCtx */
 #include "zstd_decompress_block.h"
 #include "../common/c_contracts.h"
+
+/* Extents for the objects an enforced contract has to allocate. See the note on
+   ZSTD_execSequence: these exist only because the buffer sizes appear in no
+   parameter, so a symbolic 'fresh' has nothing to be symbolic in. */
+#define ZSTD_CONTRACT_DSTCAP 64
+#define ZSTD_CONTRACT_LITCAP 32
 #include "../common/bits.h"  /* ZSTD_highbit32 */
 
 /*_*******************************************************
@@ -840,6 +846,12 @@ HINT_INLINE void ZSTD_overlapCopy8(BYTE** op, BYTE const** ip, size_t offset)
  */
 static void
 ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length, ZSTD_overlap_e ovtype)
+    /* Inherited from ZSTD_wildcopy, which this calls on two of its three paths
+       and which over-copies by WILDCOPY_OVERLENGTH by design. The tail loop
+       stops at op + length, so the frame is the wider of the two. */
+    pre     (readable(ip, length + WILDCOPY_OVERLENGTH))
+    pre     (writable(op, length + WILDCOPY_OVERLENGTH))
+    assigns (range(op, 0, length + WILDCOPY_OVERLENGTH))
 {
     ptrdiff_t const diff = op - ip;
     BYTE* const oend = op + length;
@@ -1033,23 +1045,55 @@ size_t ZSTD_execSequence(BYTE* op,
     BYTE* const oend, seq_t sequence,
     const BYTE** litPtr, const BYTE* const litLimit,
     const BYTE* const prefixStart, const BYTE* const virtualStart, const BYTE* const dictEnd)
-    /* What a caller must guarantee, and only that. Writing these down forced a
-       distinction the asserts in the body blur: three of the conditions the
-       first draft listed here -- the literals fitting, the sequence fitting in
-       the output buffer, and the offset lying inside the window -- are not
-       preconditions at all. This function validates them and routes the failing
-       cases to ZSTD_execSequenceEnd, which returns an error. Asserting them at
-       entry claims the caller owes them, and a caller that honours the claim is
-       doing redundant work; a checker that believes it rejects legal streams.
-       Confirmed empirically: `oend - op >= WILDCOPY_OVERLENGTH` fired three
-       times on an ordinary 297 KB decompression whose output was correct.
+    /* These obligations exist today only in asserts that -DNDEBUG deletes, and
+       in allocation arithmetic two call frames away in ZSTD_decodeLiteralsBlock.
+       Stated here they survive the release build and reach a checker.
 
-       What remains is genuine, and today lives only in asserts that -DNDEBUG
-       deletes. */
+       The first group is what an assert could not say: an assert can compare
+       two pointers but cannot claim they are in the same object, and C only
+       defines the comparison when they are. Every clause in it was recovered
+       from a checker failure rather than from the source, which is the point --
+       the arithmetic was written down and the memory model it rests on was not.
+
+       The idiom matters as much as the content. Under --enforce-contract every
+       parameter is havoc'd and these clauses are assumed, so 'fresh' is what
+       produces an object and 'pointer_in_range' is what puts a second pointer
+       inside it. 'readable', 'writable' and 'same_object' only interrogate an
+       object that already exists; assumed over a havoc'd pointer they are
+       unsatisfiable, and CBMC then reports every property SUCCESS without ever
+       entering the body.
+
+       The caps are why this form is bounded. The output object runs from
+       prefixStart to oend and its extent appears in no parameter, so there is
+       nothing symbolic to give 'fresh'. That is a property of the signature,
+       not of the checker. The literals object is one WILDCOPY_OVERLENGTH larger
+       than the range litLimit may fall in, so the slack clause below stays
+       satisfiable for every permitted litLimit rather than silently emptying
+       the precondition set. */
+    pre (fresh(litPtr, sizeof(const BYTE*)))
+    pre (fresh(prefixStart, ZSTD_CONTRACT_DSTCAP))
+    pre (fresh(*litPtr, ZSTD_CONTRACT_LITCAP + WILDCOPY_OVERLENGTH))
+    pre (pointer_in_range(prefixStart, op, prefixStart + ZSTD_CONTRACT_DSTCAP))
+    pre (pointer_in_range(prefixStart, oend, prefixStart + ZSTD_CONTRACT_DSTCAP))
+    pre (pointer_in_range(prefixStart, virtualStart, prefixStart + ZSTD_CONTRACT_DSTCAP))
+    pre (pointer_in_range(prefixStart, dictEnd, prefixStart + ZSTD_CONTRACT_DSTCAP))
+    pre (pointer_in_range(*litPtr, litLimit, *litPtr + ZSTD_CONTRACT_LITCAP))
+    pre (pointer_offset(virtualStart) <= pointer_offset(dictEnd))
+
+    /* -------- what a caller must guarantee, and only that --------
+
+       Writing these down forced a distinction the asserts in the body blur:
+       three of the conditions an earlier draft listed here -- the literals
+       fitting, the sequence fitting in the output buffer, and the offset lying
+       inside the window -- are not preconditions at all. This function
+       validates them and routes the failing cases to ZSTD_execSequenceEnd,
+       which returns an error. Asserting them at entry claims the caller owes
+       them, and a caller that honours the claim is doing redundant work; a
+       checker that believes it rejects legal streams. Confirmed empirically:
+       `oend - op >= WILDCOPY_OVERLENGTH` fired three times on an ordinary
+       297 KB decompression whose output was correct. */
     pre (op != NULL)
     pre (op <= oend)
-    pre (prefixStart <= op)
-    pre (*litPtr <= litLimit)
     pre (sequence.matchLength >= 1)
     pre (sequence.offset >= 1)
     /* Not runtime-checkable, and the one that is easiest to miss: ZSTD_copy16
@@ -1058,6 +1102,9 @@ size_t ZSTD_execSequence(BYTE* op,
        past litLimit. Established by allocation arithmetic in
        ZSTD_decodeLiteralsBlock, consumed here, stated in neither signature. */
     pre (readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
+    /* Without a frame the enforced contract is the empty one, and every write
+       the function makes is reported as a violation. */
+    assigns (locations(*litPtr, range(op, 0, (c_ssize_t)(oend - op))))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;

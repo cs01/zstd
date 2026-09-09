@@ -22,6 +22,16 @@
 #include "compiler.h"
 #define C_CONTRACTS_NO_PREFIX
 #include "c_contracts.h"
+
+/* A contract on an always_inline function has no effect on its callers: the
+   callee is gone by the time the checker looks, and its loop contracts go with
+   it. Suppressing the attribute in the verification build is what lets
+   ZSTD_wildcopy's contract attach where ZSTD_safecopy and ZSTD_execSequence can
+   be checked against it. It changes no shipping build. */
+#ifdef ZSTD_CONTRACTS
+#  undef FORCE_INLINE_ATTR
+#  define FORCE_INLINE_ATTR
+#endif
 #include "cpu.h"
 #include "mem.h"
 #include "debug.h"                 /* assert, DEBUGLOG, RAWLOG, g_debuglevel */
@@ -234,18 +244,27 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
              || (const BYTE*)src + 8 <= (const BYTE*)dst)
     assigns (range((BYTE*)dst, 0, length + WILDCOPY_OVERLENGTH))
 {
-    ptrdiff_t diff = (BYTE*)dst - (const BYTE*)src;
     const BYTE* ip = (const BYTE*)src;
     BYTE* op = (BYTE*)dst;
+    BYTE* const opStart c_ghost = (BYTE*)dst;
+    const BYTE* const ipStart c_ghost = (const BYTE*)src;
     BYTE* const oend = op + length;
 
-    if (ovtype == ZSTD_overlap_src_before_dst && diff < WILDCOPY_VECLEN) {
+    if (ovtype == ZSTD_overlap_src_before_dst &&
+        (BYTE*)dst - (const BYTE*)src < WILDCOPY_VECLEN) {
         /* Handle short offset copies. */
-        do {
+        do
+        assigns   (locations(op, locations(ip, range(opStart, 0, length + WILDCOPY_OVERLENGTH))))
+        loop_invariant (same_object(op, opStart))
+        loop_invariant (same_object(ip, ipStart))
+        loop_invariant (pointer_offset(op) >= pointer_offset(opStart))
+        loop_invariant (pointer_offset(op) <= pointer_offset(opStart) + (c_ssize_t)length + 8)
+        loop_invariant (pointer_offset(ip) - pointer_offset(ipStart) == pointer_offset(op) - pointer_offset(opStart))
+        decreases (pointer_offset(opStart) + (c_ssize_t)length - pointer_offset(op))
+        {
             COPY8(op, ip);
         } while (op < oend);
     } else {
-        assert(diff >= WILDCOPY_VECLEN || diff <= -WILDCOPY_VECLEN);
         /* Separate out the first COPY16() call because the copy length is
          * almost certain to be short, so the branches have different
          * probabilities. Since it is almost certain to be short, only do
@@ -256,7 +275,15 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
         if (16 >= length) return;
         op += 16;
         ip += 16;
-        do {
+        do
+        assigns   (locations(op, locations(ip, range(opStart, 0, length + WILDCOPY_OVERLENGTH))))
+        loop_invariant (same_object(op, opStart))
+        loop_invariant (same_object(ip, ipStart))
+        loop_invariant (pointer_offset(op) >= pointer_offset(opStart) + 16)
+        loop_invariant (pointer_offset(op) < pointer_offset(opStart) + (c_ssize_t)length)
+        loop_invariant (pointer_offset(ip) - pointer_offset(ipStart) == pointer_offset(op) - pointer_offset(opStart))
+        decreases (pointer_offset(opStart) + (c_ssize_t)length - pointer_offset(op))
+        {
             COPY16(op, ip);
             COPY16(op, ip);
         }
