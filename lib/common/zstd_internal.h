@@ -234,18 +234,23 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
              || (const BYTE*)src + 8 <= (const BYTE*)dst)
     assigns (range((BYTE*)dst, 0, length + WILDCOPY_OVERLENGTH))
 {
-    ptrdiff_t diff = (BYTE*)dst - (const BYTE*)src;
     const BYTE* ip = (const BYTE*)src;
     BYTE* op = (BYTE*)dst;
     BYTE* const oend = op + length;
 
-    if (ovtype == ZSTD_overlap_src_before_dst && diff < WILDCOPY_VECLEN) {
+    /* Subtracting two pointers is defined only when they are in the same
+       object, and that is exactly the overlap case. Computing it up front, as
+       this did, is undefined for every no-overlap caller -- which is all of the
+       hot ones. && short-circuits, so the subtraction now happens only where it
+       means something. Found by proving the contract above; the write-up is
+       FINDING-wildcopy-pointer-subtract.md in the llvm-contracts tree. */
+    if (ovtype == ZSTD_overlap_src_before_dst &&
+        (BYTE*)dst - (const BYTE*)src < WILDCOPY_VECLEN) {
         /* Handle short offset copies. */
         do {
             COPY8(op, ip);
         } while (op < oend);
     } else {
-        assert(diff >= WILDCOPY_VECLEN || diff <= -WILDCOPY_VECLEN);
         /* Separate out the first COPY16() call because the copy length is
          * almost certain to be short, so the branches have different
          * probabilities. Since it is almost certain to be short, only do
