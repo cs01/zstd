@@ -237,6 +237,11 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
     const BYTE* ip = (const BYTE*)src;
     BYTE* op = (BYTE*)dst;
     BYTE* const oend = op + length;
+    /* Where the copy started, so a loop invariant can say which object op and
+       ip are still inside. Ordinary consts; c_ghost keeps -Wunused quiet in a
+       build where the annotations vanish. */
+    BYTE* const dstStart c_ghost = (BYTE*)dst;
+    const BYTE* const srcStart c_ghost = (const BYTE*)src;
 
     /* Subtracting two pointers is defined only when they are in the same
        object, and that is exactly the overlap case. Computing it up front, as
@@ -246,10 +251,21 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
        FINDING-wildcopy-pointer-subtract.md in the llvm-contracts tree. */
     if (ovtype == ZSTD_overlap_src_before_dst &&
         (BYTE*)dst - (const BYTE*)src < WILDCOPY_VECLEN) {
-        /* Handle short offset copies. */
-        do {
-            COPY8(op, ip);
-        } while (op < oend);
+        /* Handle short offset copies.
+
+           Rewritten from do/while, and COPY8 inlined, for verification only:
+           goto-instrument rejects a loop contract on a do loop, and COPY8 is
+           itself a do{}while(0), which CBMC counts as a second loop. The
+           behaviour is identical -- the body still runs at least once. */
+        while (1)
+        assigns        (locations(op, ip))
+        loop_invariant (same_object(op, dstStart))
+        loop_invariant (same_object(ip, srcStart))
+        decreases      (pointer_offset(dstStart) + (c_ssize_t)length
+                        - pointer_offset(op))
+        {   ZSTD_copy8(op, ip); op += 8; ip += 8;
+            if (!(op < oend)) break;
+        }
     } else {
         /* Separate out the first COPY16() call because the copy length is
          * almost certain to be short, so the branches have different
@@ -261,11 +277,23 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
         if (16 >= length) return;
         op += 16;
         ip += 16;
-        do {
-            COPY16(op, ip);
-            COPY16(op, ip);
+        /* Same rewrite, same reason. */
+        while (1)
+        assigns        (locations(op, locations(ip,
+                            range(dstStart, 0, length + WILDCOPY_OVERLENGTH))))
+        loop_invariant (same_object(op, dstStart))
+        loop_invariant (same_object(ip, srcStart))
+        loop_invariant (pointer_offset(op) >= pointer_offset(dstStart) + 16)
+        loop_invariant (pointer_offset(op)
+                        < pointer_offset(dstStart) + (c_ssize_t)length)
+        loop_invariant (pointer_offset(ip) - pointer_offset(srcStart)
+                        == pointer_offset(op) - pointer_offset(dstStart))
+        decreases      (pointer_offset(dstStart) + (c_ssize_t)length
+                        - pointer_offset(op))
+        {   ZSTD_copy16(op, ip); op += 16; ip += 16;
+            ZSTD_copy16(op, ip); op += 16; ip += 16;
+            if (!(op < oend)) break;
         }
-        while (op < oend);
     }
 }
 
