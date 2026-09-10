@@ -1046,7 +1046,7 @@ size_t ZSTD_execSequence(BYTE* op,
 
        What remains is genuine, and today lives only in asserts that -DNDEBUG
        deletes. */
-    pre (op != NULL)
+    pre (op != 0)
     pre (op <= oend)
     pre (prefixStart <= op)
     pre (*litPtr <= litLimit)
