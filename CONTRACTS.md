@@ -8,11 +8,12 @@ are additionally type-checked and folded at each call site, which is what stops
 them going stale between proof runs.
 
 Every clause is spelled `contract_`. See
-[`lib/common/c_contracts.h`](lib/common/c_contracts.h), which is vendored here
-and carries a `C_CONTRACTS_VERSION`.
+[`lib/common/c_contracts.h`](lib/common/c_contracts.h), which is vendored from
+[cs01/c-contracts](https://github.com/cs01/c-contracts) and carries a
+`C_CONTRACTS_VERSION`.
 
-**In one paragraph.** One unbounded memory-safety proof (`ZSTD_wildcopy`, every
-length, by induction rather than by testing). Three real instances of undefined
+**In one paragraph.** One memory-safety proof (`ZSTD_wildcopy`, loops discharged
+by induction rather than by unwinding). Three real instances of undefined
 behaviour, all low severity, none exploitable on conventional hardware, two with
 proved fixes. One specification defect. One place where seven load-bearing
 preconditions exist only in `-DNDEBUG` assertions and caller arithmetic. Nothing
@@ -57,12 +58,14 @@ another file.
 
 ## What was proved
 
-**`ZSTD_wildcopy`, no-overlap mode: memory-safe for every length below 1 GiB.**
-413 obligations, zero failures, **one iteration**. There is no `--unwind` — the
-loop invariants and `decreases` clause let CBMC discharge the loops by
-induction, so the result is quantified over all lengths rather than checked up
-to a bound. For a function whose job is to deliberately over-copy past its
-buffer, that is the result worth having.
+**`ZSTD_wildcopy`, no-overlap mode: memory-safe.** 1487 properties, zero
+failures, **one iteration**. There is no `--unwind` — the loop invariants and
+`decreases` clause let CBMC discharge the loops by induction rather than by
+unwinding them, which is why a single iteration settles it. The harness caps the
+symbolic `length` below 4096 to keep the solver finite, so the theorem is "for
+every length under 4096", but the loops inside are never unrolled and the bound
+buys nothing but solve time. For a function whose job is to deliberately
+over-copy past its buffer, that is the result worth having.
 
 **`ZSTD_execSequence` reconstructs the correct bytes.** Functional correctness of
 the LZ reconstruction, not just bounds — literals copied verbatim, and match
@@ -80,34 +83,51 @@ as a negative result.
 
 ## Reproducing
 
-Needs CBMC **6.x** with `goto-cc` and `goto-instrument`, plus z3. Note that
-Ubuntu 24.04 ships CBMC 5.95, which will not work — loop-contract handling
-changed substantially across that major version. Take a release build from the
-CBMC GitHub releases rather than from apt.
+Needs [CBMC](https://www.cprover.org/cbmc/) **6.x** with `goto-cc` and
+`goto-instrument`, plus z3. Note that Ubuntu 24.04 ships CBMC 5.95, which will
+not work — loop-contract handling changed substantially across that major
+version. Take a release build from the CBMC GitHub releases rather than from apt.
 
-Build clang from the [companion branch](https://github.com/cs01/llvm-project/tree/contracts-c-dev)
-as its README describes, then from this checkout:
+Clone [cs01/c-contracts](https://github.com/cs01/c-contracts) and run its test
+suite against this checkout, pointing `ZSTD` at wherever this tree lives:
 
 ```sh
-LLVM_CONTRACTS=/path/to/llvm-c-contracts
-PATH=/path/to/cbmc/bin:$PATH \
-ZSTD="$PWD" \
-CLANG="$LLVM_CONTRACTS/build/bin/clang" \
-"$LLVM_CONTRACTS/proofs/zstd/run-wildcopy-from-grammar.sh"
+cd /path/to/c-contracts
+ZSTD=/path/to/zstd test/zstd.sh
+```
+
+The suite lowers all 39 contract clauses from the real translation unit, then
+proves `ZSTD_wildcopy` memory-safe via the harness in `test/zstd/wildcopy.c`:
+
+```text
+== c_contracts.h against /path/to/zstd ==
+  1 lowers a real translation unit             PASS   39 clause(s) lowered from a real translation unit
+  2 ZSTD_wildcopy is memory safe, unbounded    PASS   26s, budget 60s
+
+every case that ran behaved as recorded
+```
+
+To run `prove.sh` directly on a single function, again from the c-contracts
+checkout:
+
+```sh
+ZSTD=/path/to/zstd
+./prove.sh harness test/zstd/wildcopy.c -H \
+  -DNDEBUG -DZSTD_NO_INTRINSICS -I $ZSTD/lib/common -I $ZSTD/lib
 ```
 
 ```text
-lowered 15 contract clauses from the grammar
+lowered 15 clause(s)
+mode: harness (frame not checked)
 CBMC version 6.11.0 (cbmc-6.11.0) 64-bit x86_64 linux
-Running SMT2 QF_AUFBV using Z3
-
-** 0 of 413 failed (1 iterations)
+...
+** 0 of 1487 failed (1 iterations)
 VERIFICATION SUCCESSFUL
+== solved by z3 in 27s
 ```
 
-About one minute with z3 4.8.15. Setting `CBMC_SOLVER=` selects CBMC's built-in
-SAT backend, which reaches the same verdict independently in 3m21s — a useful
-cross-check, since the two solvers share no reasoning core.
+About 30 seconds with z3. `solve.sh` races every installed solver (z3, sat,
+bitwuzla, cvc5) and takes the first clean answer.
 
 ## What the annotations look like
 
@@ -127,6 +147,14 @@ contract_decreases (contract_pointer_offset(dstStart) + (contract_ssize_t)length
 
 `contract_assigns` is the write frame; `contract_invariant` and
 `contract_decreases` are what replace unrolling with induction.
+
+**Only the `ZSTD_wildcopy` proof has a runner in this repo.** The
+`ZSTD_execSequence` functional-correctness proof and the `FSE_readNCount` audit
+were done under an earlier contract-aware clang fork that this branch no longer
+depends on, and their harnesses did not survive the move; `ZSTD_execSequence`
+does not converge under `prove.sh` within a few minutes as annotated. The
+annotations those proofs produced are still in the source, and are the durable
+part of the result.
 
 The loop was a `do`/`while` and the body was `COPY8(op, ip)`. Both had to change,
 and neither is a matter of taste: `goto-instrument` refuses a loop contract on a
@@ -148,7 +176,3 @@ behaviour is identical, and the body still runs at least once.
 - The only build-affecting change is suppressing `FORCE_INLINE_ATTR` under
   `-DZSTD_CONTRACTS`, which is off by default. A contract on an `always_inline`
   function otherwise silently does nothing.
-
-Detailed proofs, controls, severity assessments and reproduction scripts are in
-the companion repository's
-[`proofs/zstd`](https://github.com/cs01/llvm-project/tree/contracts-c-dev/proofs/zstd).
