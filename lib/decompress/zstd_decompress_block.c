@@ -849,16 +849,16 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
 
     if (length < 8) {
         /* Handle short lengths. */
-        {   BYTE* const opStart c_ghost = op;
-            const BYTE* const ipStart c_ghost = ip;
+        {   BYTE* const opStart contract_ghost = op;
+            const BYTE* const ipStart contract_ghost = ip;
             while (op < oend)
-            assigns   (locations(op, locations(ip, range(opStart, 0, length))))
-            loop_invariant (same_object(op, opStart))
-            loop_invariant (same_object(ip, ipStart))
-            loop_invariant (pointer_offset(op) >= pointer_offset(opStart))
-            loop_invariant (pointer_offset(op) <= pointer_offset(opStart) + (c_ssize_t)length)
-            loop_invariant (pointer_offset(ip) - pointer_offset(ipStart) == pointer_offset(op) - pointer_offset(opStart))
-            decreases (pointer_offset(opStart) + (c_ssize_t)length - pointer_offset(op))
+            contract_assigns   (contract_locations(op, contract_locations(ip, contract_range(opStart, 0, length))))
+            contract_invariant (contract_same_object(op, opStart))
+            contract_invariant (contract_same_object(ip, ipStart))
+            contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(opStart))
+            contract_invariant (contract_pointer_offset(op) <= contract_pointer_offset(opStart) + (contract_ssize_t)length)
+            contract_invariant (contract_pointer_offset(ip) - contract_pointer_offset(ipStart) == contract_pointer_offset(op) - contract_pointer_offset(opStart))
+            contract_decreases (contract_pointer_offset(opStart) + (contract_ssize_t)length - contract_pointer_offset(op))
             { *op++ = *ip++; }
         }
         return;
@@ -886,17 +886,17 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
         op += oend_w - op;
     }
     /* Handle the leftovers. */
-    {   BYTE* const opTail c_ghost = op;
-        const BYTE* const ipTail c_ghost = ip;
-        size_t const tail c_ghost = (size_t)(oend - op);
+    {   BYTE* const opTail contract_ghost = op;
+        const BYTE* const ipTail contract_ghost = ip;
+        size_t const tail contract_ghost = (size_t)(oend - op);
         while (op < oend)
-        assigns   (locations(op, locations(ip, range(opTail, 0, tail))))
-        loop_invariant (same_object(op, opTail))
-        loop_invariant (same_object(ip, ipTail))
-        loop_invariant (pointer_offset(op) >= pointer_offset(opTail))
-        loop_invariant (pointer_offset(op) <= pointer_offset(opTail) + (c_ssize_t)tail)
-        loop_invariant (pointer_offset(ip) - pointer_offset(ipTail) == pointer_offset(op) - pointer_offset(opTail))
-        decreases (pointer_offset(opTail) + (c_ssize_t)tail - pointer_offset(op))
+        contract_assigns   (contract_locations(op, contract_locations(ip, contract_range(opTail, 0, tail))))
+        contract_invariant (contract_same_object(op, opTail))
+        contract_invariant (contract_same_object(ip, ipTail))
+        contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(opTail))
+        contract_invariant (contract_pointer_offset(op) <= contract_pointer_offset(opTail) + (contract_ssize_t)tail)
+        contract_invariant (contract_pointer_offset(ip) - contract_pointer_offset(ipTail) == contract_pointer_offset(op) - contract_pointer_offset(opTail))
+        contract_decreases (contract_pointer_offset(opTail) + (contract_ssize_t)tail - contract_pointer_offset(op))
         { *op++ = *ip++; }
     }
 }
@@ -1046,18 +1046,18 @@ size_t ZSTD_execSequence(BYTE* op,
 
        What remains is genuine, and today lives only in asserts that -DNDEBUG
        deletes. */
-    pre (op != 0)
-    pre (op <= oend)
-    pre (prefixStart <= op)
-    pre (*litPtr <= litLimit)
-    pre (sequence.matchLength >= 1)
-    pre (sequence.offset >= 1)
+    contract_pre       (op != 0)
+    contract_pre       (op <= oend)
+    contract_pre       (prefixStart <= op)
+    contract_pre       (*litPtr <= litLimit)
+    contract_pre       (sequence.matchLength >= 1)
+    contract_pre       (sequence.offset >= 1)
     /* Not runtime-checkable, and the one that is easiest to miss: ZSTD_copy16
        always reads 16 bytes and ZSTD_wildcopy over-reads up to
        WILDCOPY_OVERLENGTH, so the literals buffer needs that much readable slack
        past litLimit. Established by allocation arithmetic in
        ZSTD_decodeLiteralsBlock, consumed here, stated in neither signature. */
-    pre (readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
+    contract_pre       (contract_readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;

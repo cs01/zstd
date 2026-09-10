@@ -20,7 +20,6 @@
 *  Dependencies
 ***************************************/
 #include "compiler.h"
-#define C_CONTRACTS_NO_PREFIX
 #include "c_contracts.h"
 #include "cpu.h"
 #include "mem.h"
@@ -221,8 +220,8 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
     /* Wildcopy deliberately writes up to WILDCOPY_OVERLENGTH bytes past length.
        Every caller must therefore own that much slack, which is stated nowhere
        in the signature and is the source of the overwrite bugs this guards. */
-    pre     (readable(src, length + WILDCOPY_OVERLENGTH))
-    pre     (writable(dst, length + WILDCOPY_OVERLENGTH))
+    contract_pre       (contract_readable(src, length + WILDCOPY_OVERLENGTH))
+    contract_pre       (contract_writable(dst, length + WILDCOPY_OVERLENGTH))
     /* The overlap case is the only one where the two pointers are in the same
        object, so it is the only one where this comparison is defined. The
        doc-comment above states the separation (8 bytes here, WILDCOPY_VECLEN
@@ -230,18 +229,18 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
        compared at all); nothing enforced it. Written as WILDCOPY_VECLEN first,
        which the runtime tier rejected 3809 times on an ordinary corpus:
        ZSTD_overlapCopy8 exists precisely to serve separations of 8..15. */
-    pre     (ovtype != ZSTD_overlap_src_before_dst
-             || (const BYTE*)src + 8 <= (const BYTE*)dst)
-    assigns (range((BYTE*)dst, 0, length + WILDCOPY_OVERLENGTH))
+    contract_pre       (ovtype != ZSTD_overlap_src_before_dst
+                        || (const BYTE*)src + 8 <= (const BYTE*)dst)
+    contract_assigns   (contract_range((BYTE*)dst, 0, length + WILDCOPY_OVERLENGTH))
 {
     const BYTE* ip = (const BYTE*)src;
     BYTE* op = (BYTE*)dst;
     BYTE* const oend = op + length;
     /* Where the copy started, so a loop invariant can say which object op and
-       ip are still inside. Ordinary consts; c_ghost keeps -Wunused quiet in a
+       ip are still inside. Ordinary consts; contract_ghost keeps -Wunused quiet in a
        build where the annotations vanish. */
-    BYTE* const dstStart c_ghost = (BYTE*)dst;
-    const BYTE* const srcStart c_ghost = (const BYTE*)src;
+    BYTE* const dstStart contract_ghost = (BYTE*)dst;
+    const BYTE* const srcStart contract_ghost = (const BYTE*)src;
 
     /* Subtracting two pointers is defined only when they are in the same
        object, and that is exactly the overlap case. Computing it up front, as
@@ -258,11 +257,11 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
            itself a do{}while(0), which CBMC counts as a second loop. The
            behaviour is identical -- the body still runs at least once. */
         while (1)
-        assigns        (locations(op, ip))
-        loop_invariant (same_object(op, dstStart))
-        loop_invariant (same_object(ip, srcStart))
-        decreases      (pointer_offset(dstStart) + (c_ssize_t)length
-                        - pointer_offset(op))
+        contract_assigns   (contract_locations(op, ip))
+        contract_invariant (contract_same_object(op, dstStart))
+        contract_invariant (contract_same_object(ip, srcStart))
+        contract_decreases (contract_pointer_offset(dstStart) + (contract_ssize_t)length
+                            - contract_pointer_offset(op))
         {   ZSTD_copy8(op, ip); op += 8; ip += 8;
             if (!(op < oend)) break;
         }
@@ -279,17 +278,21 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
         ip += 16;
         /* Same rewrite, same reason. */
         while (1)
-        assigns        (locations(op, locations(ip,
-                            range(dstStart, 0, length + WILDCOPY_OVERLENGTH))))
-        loop_invariant (same_object(op, dstStart))
-        loop_invariant (same_object(ip, srcStart))
-        loop_invariant (pointer_offset(op) >= pointer_offset(dstStart) + 16)
-        loop_invariant (pointer_offset(op)
-                        < pointer_offset(dstStart) + (c_ssize_t)length)
-        loop_invariant (pointer_offset(ip) - pointer_offset(srcStart)
-                        == pointer_offset(op) - pointer_offset(dstStart))
-        decreases      (pointer_offset(dstStart) + (c_ssize_t)length
-                        - pointer_offset(op))
+        contract_assigns   (contract_locations(op, contract_locations(ip,
+                                contract_range(dstStart, 0,
+                                               length + WILDCOPY_OVERLENGTH))))
+        contract_invariant (contract_same_object(op, dstStart))
+        contract_invariant (contract_same_object(ip, srcStart))
+        contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(dstStart) + 16)
+        contract_invariant (contract_pointer_offset(op)
+                            < contract_pointer_offset(dstStart)
+                              + (contract_ssize_t)length)
+        contract_invariant (contract_pointer_offset(ip)
+                              - contract_pointer_offset(srcStart)
+                            == contract_pointer_offset(op)
+                              - contract_pointer_offset(dstStart))
+        contract_decreases (contract_pointer_offset(dstStart) + (contract_ssize_t)length
+                            - contract_pointer_offset(op))
         {   ZSTD_copy16(op, ip); op += 16; ip += 16;
             ZSTD_copy16(op, ip); op += 16; ip += 16;
             if (!(op < oend)) break;
