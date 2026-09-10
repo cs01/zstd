@@ -840,6 +840,12 @@ HINT_INLINE void ZSTD_overlapCopy8(BYTE** op, BYTE const** ip, size_t offset)
  */
 static void
 ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length, ZSTD_overlap_e ovtype)
+    /* Inherited from ZSTD_wildcopy, which this calls on two of its three paths
+       and which over-copies by WILDCOPY_OVERLENGTH by design. The tail loop
+       stops at op + length, so the frame is the wider of the two. */
+    contract_pre       (contract_readable(ip, length + WILDCOPY_OVERLENGTH))
+    contract_pre       (contract_writable(op, length + WILDCOPY_OVERLENGTH))
+    contract_assigns   (contract_range(op, 0, length + WILDCOPY_OVERLENGTH))
 {
     ptrdiff_t const diff = op - ip;
     BYTE* const oend = op + length;
