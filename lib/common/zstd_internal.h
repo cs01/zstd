@@ -242,14 +242,9 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
     BYTE* const dstStart contract_ghost = (BYTE*)dst;
     const BYTE* const srcStart contract_ghost = (const BYTE*)src;
 
-    /* Subtracting two pointers is defined only when they are in the same
-       object, and that is exactly the overlap case. Computing it up front, as
-       this did, is undefined for every no-overlap caller -- which is all of the
-       hot ones. && short-circuits, so the subtraction now happens only where it
-       means something. Found by proving the contract above; the write-up is
-       FINDING-wildcopy-pointer-subtract.md in the llvm-contracts tree. */
-    if (ovtype == ZSTD_overlap_src_before_dst &&
-        (BYTE*)dst - (const BYTE*)src < WILDCOPY_VECLEN) {
+    ptrdiff_t diff = (BYTE*)dst - (const BYTE*)src;
+
+    if (ovtype == ZSTD_overlap_src_before_dst && diff < WILDCOPY_VECLEN) {
         /* Handle short offset copies.
 
            Rewritten from do/while, and COPY8 inlined, for verification only:
@@ -257,9 +252,18 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
            itself a do{}while(0), which CBMC counts as a second loop. The
            behaviour is identical -- the body still runs at least once. */
         while (1)
-        contract_assigns   (contract_locations(op, ip))
+        contract_assigns   (op; ip;
+                            contract_range(dstStart, 0, length + WILDCOPY_OVERLENGTH))
         contract_invariant (contract_same_object(op, dstStart))
         contract_invariant (contract_same_object(ip, srcStart))
+        contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(dstStart))
+        contract_invariant (contract_pointer_offset(op)
+                            <= contract_pointer_offset(dstStart)
+                               + (contract_ssize_t)length)
+        contract_invariant (contract_pointer_offset(ip)
+                              - contract_pointer_offset(srcStart)
+                            == contract_pointer_offset(op)
+                              - contract_pointer_offset(dstStart))
         contract_decreases (contract_pointer_offset(dstStart) + (contract_ssize_t)length
                             - contract_pointer_offset(op))
         {   ZSTD_copy8(op, ip); op += 8; ip += 8;
@@ -278,9 +282,8 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
         ip += 16;
         /* Same rewrite, same reason. */
         while (1)
-        contract_assigns   (contract_locations(op, contract_locations(ip,
-                                contract_range(dstStart, 0,
-                                               length + WILDCOPY_OVERLENGTH))))
+        contract_assigns   (op; ip;
+                            contract_range(dstStart, 0, length + WILDCOPY_OVERLENGTH))
         contract_invariant (contract_same_object(op, dstStart))
         contract_invariant (contract_same_object(ip, srcStart))
         contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(dstStart) + 16)

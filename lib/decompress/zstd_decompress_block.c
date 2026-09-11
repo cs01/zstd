@@ -801,10 +801,31 @@ typedef struct {
  *  Copies 8 bytes from ip to op and updates op and ip where ip <= op.
  *  If the offset is < 8 then the offset is spread to at least 8 bytes.
  *
- *  Precondition: *ip <= *op
- *  Postcondition: *op - *op >= 8
+ *  Precondition: *ip <= *op and *op - *ip == offset, with offset >= 1
+ *  Postcondition: *op - *ip >= 8
  */
 HINT_INLINE void ZSTD_overlapCopy8(BYTE** op, BYTE const** ip, size_t offset)
+    contract_pre (op != 0)
+    contract_pre (ip != 0)
+    contract_pre (contract_same_object(*ip, *op))
+    contract_pre (*ip <= *op)
+    contract_pre (offset >= 1)
+    contract_pre ((size_t)(*op - *ip) == offset)
+    /* Without this the postcondition silently drops the offset < 8 branch. */
+    contract_assigns (*op; *ip)
+    /* A caller trusting the contract knows only what these lines state. */
+    contract_post (contract_same_object(*op, contract_old(*op)))
+    contract_post (contract_same_object(*ip, contract_old(*ip)))
+    /* Offsets, not pointers: replacement makes both nondeterministic, and a
+       comparison between nondeterministic pointers is not checkable. */
+    contract_post (contract_pointer_offset(*op)
+                   == contract_pointer_offset(contract_old(*op)) + 8)
+    contract_post (contract_pointer_offset(*ip)
+                   >= contract_pointer_offset(contract_old(*ip)) + 1)
+    contract_post (contract_pointer_offset(*ip)
+                   <= contract_pointer_offset(contract_old(*ip)) + 8)
+    contract_post (contract_pointer_offset(*op)
+                   - contract_pointer_offset(*ip) >= 8)
 {
     assert(*ip <= *op);
     if (offset < 8) {
@@ -858,7 +879,7 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
         {   BYTE* const opStart contract_ghost = op;
             const BYTE* const ipStart contract_ghost = ip;
             while (op < oend)
-            contract_assigns   (contract_locations(op, contract_locations(ip, contract_range(opStart, 0, length))))
+            contract_assigns   (op; ip; contract_range(opStart, 0, length))
             contract_invariant (contract_same_object(op, opStart))
             contract_invariant (contract_same_object(ip, ipStart))
             contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(opStart))
@@ -896,7 +917,7 @@ ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length,
         const BYTE* const ipTail contract_ghost = ip;
         size_t const tail contract_ghost = (size_t)(oend - op);
         while (op < oend)
-        contract_assigns   (contract_locations(op, contract_locations(ip, contract_range(opTail, 0, tail))))
+        contract_assigns   (op; ip; contract_range(opTail, 0, tail))
         contract_invariant (contract_same_object(op, opTail))
         contract_invariant (contract_same_object(ip, ipTail))
         contract_invariant (contract_pointer_offset(op) >= contract_pointer_offset(opTail))
