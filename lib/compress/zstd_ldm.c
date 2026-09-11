@@ -96,6 +96,15 @@ static void ZSTD_ldm_gear_reset(ldmRollingHashState_t* state,
 static size_t ZSTD_ldm_gear_feed(ldmRollingHashState_t* state,
                                  BYTE const* data, size_t size,
                                  size_t* splits, unsigned* numSplits)
+    contract_pre       (state != 0)
+    contract_pre       (data != 0)
+    contract_pre       (splits != 0)
+    contract_pre       (numSplits != 0)
+    contract_pre       (contract_writable(state, sizeof(*state)))
+    contract_pre       (contract_readable(data, size))
+    contract_pre       (contract_writable(splits, LDM_BATCH_SIZE * sizeof(*splits)))
+    contract_pre       (contract_writable(numSplits, sizeof(*numSplits)))
+    contract_pre       (*numSplits < LDM_BATCH_SIZE)
 {
     size_t n;
     U64 hash, mask;

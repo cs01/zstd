@@ -253,13 +253,7 @@ MEM_STATIC size_t BIT_closeCStream(BIT_CStream_t* bitC)
  * @return : size of stream (== srcSize), or an errorCode if a problem is detected
  */
 MEM_STATIC size_t BIT_initDStream(BIT_DStream_t* bitD, const void* srcBuffer, size_t srcSize)
-    /* contract_fresh, not contract_readable: bitD is the caller's own stream
-       object and srcBuffer is the compressed input, never slices of one
-       another. Saying so lets --enforce-contract generate the entry point,
-       which proves the body for every input satisfying these clauses instead
-       of for whatever geometry a hand-written harness happened to pick.
-       srcSize >= 1 excludes only the early-return error path, which is the
-       one case contract_fresh cannot size. */
+    /* Distinct objects, so enforce mode can generate the entry point. */
     contract_pre (contract_fresh(bitD, sizeof(*bitD)))
     contract_pre (contract_fresh(srcBuffer, srcSize))
     contract_assigns (*bitD)

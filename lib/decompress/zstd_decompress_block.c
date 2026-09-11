@@ -811,13 +811,11 @@ HINT_INLINE void ZSTD_overlapCopy8(BYTE** op, BYTE const** ip, size_t offset)
     contract_pre (*ip <= *op)
     contract_pre (offset >= 1)
     contract_pre ((size_t)(*op - *ip) == offset)
-    /* Without this the postcondition silently drops the offset < 8 branch. */
+    /* Without assigns, the postcondition drops the offset < 8 branch. */
     contract_assigns (*op; *ip)
-    /* A caller trusting the contract knows only what these lines state. */
     contract_post (contract_same_object(*op, contract_old(*op)))
     contract_post (contract_same_object(*ip, contract_old(*ip)))
-    /* Offsets, not pointers: replacement makes both nondeterministic, and a
-       comparison between nondeterministic pointers is not checkable. */
+    /* Offsets, not pointers: replacement makes both nondeterministic. */
     contract_post (contract_pointer_offset(*op)
                    == contract_pointer_offset(contract_old(*op)) + 8)
     contract_post (contract_pointer_offset(*ip)
@@ -861,9 +859,7 @@ HINT_INLINE void ZSTD_overlapCopy8(BYTE** op, BYTE const** ip, size_t offset)
  */
 static void
 ZSTD_safecopy(BYTE* op, const BYTE* const oend_w, BYTE const* ip, size_t length, ZSTD_overlap_e ovtype)
-    /* Inherited from ZSTD_wildcopy, which this calls on two of its three paths
-       and which over-copies by WILDCOPY_OVERLENGTH by design. The tail loop
-       stops at op + length, so the frame is the wider of the two. */
+    /* Inherited from ZSTD_wildcopy, which over-copies by WILDCOPY_OVERLENGTH. */
     contract_pre       (contract_readable(ip, length + WILDCOPY_OVERLENGTH))
     contract_pre       (contract_writable(op, length + WILDCOPY_OVERLENGTH))
     contract_assigns   (contract_range(op, 0, length + WILDCOPY_OVERLENGTH))
@@ -966,6 +962,14 @@ size_t ZSTD_execSequenceEnd(BYTE* op,
     BYTE* const oend, seq_t sequence,
     const BYTE** litPtr, const BYTE* const litLimit,
     const BYTE* const prefixStart, const BYTE* const virtualStart, const BYTE* const dictEnd)
+    contract_pre       (op != 0)
+    contract_pre       (op <= oend)
+    contract_pre       (prefixStart <= op)
+    contract_pre       (*litPtr <= litLimit)
+    contract_pre       (sequence.matchLength >= 1)
+    contract_pre       (sequence.offset >= 1)
+    contract_pre       (contract_readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
+    contract_assigns   (*litPtr)
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;
@@ -1060,30 +1064,16 @@ size_t ZSTD_execSequence(BYTE* op,
     BYTE* const oend, seq_t sequence,
     const BYTE** litPtr, const BYTE* const litLimit,
     const BYTE* const prefixStart, const BYTE* const virtualStart, const BYTE* const dictEnd)
-    /* What a caller must guarantee, and only that. Writing these down forced a
-       distinction the asserts in the body blur: three of the conditions the
-       first draft listed here -- the literals fitting, the sequence fitting in
-       the output buffer, and the offset lying inside the window -- are not
-       preconditions at all. This function validates them and routes the failing
-       cases to ZSTD_execSequenceEnd, which returns an error. Asserting them at
-       entry claims the caller owes them, and a caller that honours the claim is
-       doing redundant work; a checker that believes it rejects legal streams.
-       Confirmed empirically: `oend - op >= WILDCOPY_OVERLENGTH` fired three
-       times on an ordinary 297 KB decompression whose output was correct.
-
-       What remains is genuine, and today lives only in asserts that -DNDEBUG
-       deletes. */
+    /* Genuine preconditions only; conditions the body validates are not listed. */
     contract_pre       (op != 0)
     contract_pre       (op <= oend)
     contract_pre       (prefixStart <= op)
+    /* Must precede *litPtr: CBMC checks clauses in order. */
+    contract_pre       (contract_writable(litPtr, sizeof(*litPtr)))
     contract_pre       (*litPtr <= litLimit)
     contract_pre       (sequence.matchLength >= 1)
     contract_pre       (sequence.offset >= 1)
-    /* Not runtime-checkable, and the one that is easiest to miss: ZSTD_copy16
-       always reads 16 bytes and ZSTD_wildcopy over-reads up to
-       WILDCOPY_OVERLENGTH, so the literals buffer needs that much readable slack
-       past litLimit. Established by allocation arithmetic in
-       ZSTD_decodeLiteralsBlock, consumed here, stated in neither signature. */
+    /* Literals buffer needs WILDCOPY_OVERLENGTH of readable slack past litLimit. */
     contract_pre       (contract_readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
@@ -1184,6 +1174,15 @@ size_t ZSTD_execSequenceSplitLitBuffer(BYTE* op,
     BYTE* const oend, const BYTE* const oend_w, seq_t sequence,
     const BYTE** litPtr, const BYTE* const litLimit,
     const BYTE* const prefixStart, const BYTE* const virtualStart, const BYTE* const dictEnd)
+    contract_pre       (op != 0)
+    contract_pre       (op <= oend)
+    contract_pre       (oend_w < oend)
+    contract_pre       (prefixStart <= op)
+    contract_pre       (contract_writable(litPtr, sizeof(*litPtr)))
+    contract_pre       (*litPtr <= litLimit)
+    contract_pre       (sequence.matchLength >= 1)
+    contract_pre       (sequence.offset >= 1)
+    contract_pre       (contract_readable(*litPtr, (size_t)(litLimit - *litPtr) + WILDCOPY_OVERLENGTH))
 {
     BYTE* const oLitEnd = op + sequence.litLength;
     size_t const sequenceLength = sequence.litLength + sequence.matchLength;

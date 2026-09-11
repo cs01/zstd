@@ -7711,6 +7711,13 @@ size_t convertSequences_noRepcodes(
 size_t ZSTD_convertBlockSequences(ZSTD_CCtx* cctx,
                 const ZSTD_Sequence* const inSeqs, size_t nbSequences,
                 int repcodeResolution)
+    contract_pre       (cctx != 0)
+    contract_pre       (inSeqs != 0)
+    contract_pre       (nbSequences >= 1)
+    /* No extent clause for cctx: its reachable state is a graph. */
+    contract_pre       (contract_readable(inSeqs, nbSequences * sizeof(*inSeqs)))
+    contract_pre       (inSeqs[nbSequences - 1].matchLength == 0)
+    contract_pre       (inSeqs[nbSequences - 1].offset == 0)
 {
     Repcodes_t updatedRepcodes;
     size_t seqNb = 0;

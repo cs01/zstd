@@ -217,18 +217,10 @@ typedef enum {
  */
 MEM_STATIC FORCE_INLINE_ATTR
 void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e const ovtype)
-    /* Wildcopy deliberately writes up to WILDCOPY_OVERLENGTH bytes past length.
-       Every caller must therefore own that much slack, which is stated nowhere
-       in the signature and is the source of the overwrite bugs this guards. */
+    /* Callers must own WILDCOPY_OVERLENGTH of slack past length. */
     contract_pre       (contract_readable(src, length + WILDCOPY_OVERLENGTH))
     contract_pre       (contract_writable(dst, length + WILDCOPY_OVERLENGTH))
-    /* The overlap case is the only one where the two pointers are in the same
-       object, so it is the only one where this comparison is defined. The
-       doc-comment above states the separation (8 bytes here, WILDCOPY_VECLEN
-       for the no-overlap case, which is a different object and so cannot be
-       compared at all); nothing enforced it. Written as WILDCOPY_VECLEN first,
-       which the runtime tier rejected 3809 times on an ordinary corpus:
-       ZSTD_overlapCopy8 exists precisely to serve separations of 8..15. */
+    /* Overlap requires src + 8 <= dst; no-overlap pointers are in different objects. */
     contract_pre       (ovtype != ZSTD_overlap_src_before_dst
                         || (const BYTE*)src + 8 <= (const BYTE*)dst)
     contract_assigns   (contract_range((BYTE*)dst, 0, length + WILDCOPY_OVERLENGTH))
@@ -236,21 +228,14 @@ void ZSTD_wildcopy(void* dst, const void* src, size_t length, ZSTD_overlap_e con
     const BYTE* ip = (const BYTE*)src;
     BYTE* op = (BYTE*)dst;
     BYTE* const oend = op + length;
-    /* Where the copy started, so a loop invariant can say which object op and
-       ip are still inside. Ordinary consts; contract_ghost keeps -Wunused quiet in a
-       build where the annotations vanish. */
+    /* Loop-invariant anchors; contract_ghost suppresses -Wunused. */
     BYTE* const dstStart contract_ghost = (BYTE*)dst;
     const BYTE* const srcStart contract_ghost = (const BYTE*)src;
 
     ptrdiff_t diff = (BYTE*)dst - (const BYTE*)src;
 
     if (ovtype == ZSTD_overlap_src_before_dst && diff < WILDCOPY_VECLEN) {
-        /* Handle short offset copies.
-
-           Rewritten from do/while, and COPY8 inlined, for verification only:
-           goto-instrument rejects a loop contract on a do loop, and COPY8 is
-           itself a do{}while(0), which CBMC counts as a second loop. The
-           behaviour is identical -- the body still runs at least once. */
+        /* while(1)/break: goto-instrument cannot attach contracts to do/while. */
         while (1)
         contract_assigns   (op; ip;
                             contract_range(dstStart, 0, length + WILDCOPY_OVERLENGTH))
