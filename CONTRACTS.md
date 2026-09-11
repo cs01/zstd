@@ -1,18 +1,39 @@
-| Term | Means |
+## Requirements
+
+| Tool | Required? | Why | Verified with |
+|---|---|---|---|
+| `cbmc` 6+ | yes | Runs the proofs. CBMC 5.x lacks the contracts support used here; Ubuntu 24.04 ships 5.95, which will not work | `cbmc --version` (6.11.0) |
+| `goto-cc` 6+ | yes | Compiles the preprocessed source to a goto binary. Ships with CBMC | `goto-cc --version` |
+| `goto-instrument` 6+ | yes | Applies loop contracts, drops unreachable functions, enforces or replaces contracts. Ships with CBMC | `goto-instrument --version` |
+| `/usr/bin/cc` | yes | Preprocesses the contract macros to CBMC syntax. Hardcoded path in `prove.sh` | `/usr/bin/cc --version` (gcc 11.5.0) |
+| POSIX `sh` | yes | `prove.sh` and `proofs/run.sh` | — |
+| `prove.sh` | yes | At the repo root, or a `c-contracts` checkout beside this one, or set `PROVE=` | `./prove.sh` |
+| `z3` | no | One of the raced solvers. Without any of these CBMC still uses its built-in SAT backend | `z3 --version` (4.8.15) |
+| `bitwuzla`, `cvc5` | no | Also raced if present. More installed solvers means the race has more to pick from | — |
+
+## Running
+
+| What | How |
 |---|---|
-| `CF` | Flags every command passes to `prove.sh`, which forwards them to `cc -E` and `goto-cc`: `CF="-DNDEBUG -DZSTD_NO_INTRINSICS -I lib/common -I lib"` |
+| Set flags | `CF="-DNDEBUG -DZSTD_NO_INTRINSICS -I lib/common -I lib"` |
 | `-DNDEBUG` | Matches the release build. Removes `assert()`, so asserts in the body are **not** checked by any proof here |
 | `-DZSTD_NO_INTRINSICS` | Disables the SIMD paths `goto-cc` cannot parse |
+| Run all proofs | `./proofs/run.sh` |
+| Run one proof | See the Command column in the tables below |
+
+## Legend
+
+| Term | Means |
+|---|---|
 | mode `enforce` | `--enforce-contract`. CBMC generates the entry point from the contract itself. Preconditions assumed, **postconditions checked**, body verified for every input satisfying the contract. No harness file exists |
 | mode `harness` | `-H`. Hand-written entry point in `proofs/*.c`. The body is inlined and checked for memory safety; the function's own contract clauses are **not** checked |
 | mode `harness -r` | `-H -r FN`. The call is replaced by `FN`'s contract: preconditions **asserted** at the call site, assigns targets set nondeterministic, **postconditions assumed** |
-| harness needed when | Pointers alias into one object. Contracts can describe that (`contract_same_object(*ip, *op)`, `(*op - *ip) == offset`) but `contract_fresh` only makes distinct objects, so CBMC cannot construct a witness |
-| `contract_post` needs `contract_assigns` | Without it a caller assumes no write, so `*op - *ip` stays `== offset` and the postcondition forces `offset >= 8`, silently deleting the `offset < 8` branch. Verify with a probe asserting `offset >= 8` after the call: it must fail |
-| postconditions compare offsets | Replacement makes both pointers nondeterministic and comparing those is not checkable, so the clauses compare `contract_pointer_offset` integers |
-| assigns syntax | `contract_assigns (a; b)` works on function and loop clauses. Two clauses `contract_assigns (a) contract_assigns (b)` union on a function but are a syntax error on a loop. `contract_assigns (a, b)` is a preprocessor error |
-| run everything | `./proofs/run.sh` — the recorded cases only, all under 5s |
+| harness needed when | Pointers alias into one object. Contracts can describe that (`contract_same_object`, `*op - *ip == offset`) but `contract_fresh` only makes distinct objects, so CBMC cannot construct a witness |
+| `contract_post` needs `contract_assigns` | Without it a caller assumes no write, so `*op - *ip` stays `== offset` and the postcondition forces `offset >= 8`, silently deleting the `offset < 8` branch |
+| postconditions compare offsets | Replacement makes both pointers nondeterministic; the clauses compare `contract_pointer_offset` integers instead |
+| assigns syntax | `contract_assigns (a; b)` — semicolons, not commas. Two clauses `contract_assigns(a) contract_assigns(b)` union on a function but are a syntax error on a loop |
 
-## Defects
+## Undefined behavior discovered
 
 | Where | Code | Why it is UB | Exhibited by |
 |---|---|---|---|
