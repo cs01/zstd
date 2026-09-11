@@ -129,13 +129,13 @@ printf '  %-34s %-6s %s\n' "ZSTD_safecopy" HOLD \
 echo
 echo "--- not yet covered ---"
 printf '  %-34s %-6s %s\n' "ZSTD_execSequence" TODO \
-  "7 preconditions, deep call tree, needs -r"
+  "8 preconditions, deep call tree, needs -r"
 printf '  %-34s %-6s %s\n' "ZSTD_execSequenceSplitLitBuffer" TODO \
-  "no contract_pre yet"
+  "9 preconditions, same call tree"
 printf '  %-34s %-6s %s\n' "ZSTD_ldm_gear_feed" TODO \
-  "precondition in comment only"
+  "annotated, blocked on loop contracts"
 printf '  %-34s %-6s %s\n' "ZSTD_convertBlockSequences" TODO \
-  "precondition in comment only"
+  "annotated, blocked on loop contracts"
 
 echo
 echo "--- summary ---"
