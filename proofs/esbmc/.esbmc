@@ -1,0 +1,13 @@
+# Sourced by run.sh. Disproving harnesses run without unwinding assertions.
+ESBMC_UNWIND=9
+ESBMC_CHECKS=(--overflow-check --ub-shift-check --force-malloc-success)
+DISPROVE="--overflow-check --ub-shift-check --force-malloc-success --no-unwinding-assertions"
+
+ESBMC_HARNESS_CHECKS[bitstream_init_limitptr_harness]="${DISPROVE}"
+ESBMC_HARNESS_UNWIND[bitstream_init_limitptr_harness]=17
+ESBMC_EXPECT[bitstream_init_limitptr_harness]=COUNTEREXAMPLE
+
+ESBMC_HARNESS_CHECKS[wildcopy_nooverlap_harness]="${DISPROVE}"
+ESBMC_EXPECT[wildcopy_nooverlap_harness]=COUNTEREXAMPLE
+
+ESBMC_HARNESS_UNWIND[execsequence_harness]=26
